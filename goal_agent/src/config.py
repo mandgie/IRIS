@@ -1,17 +1,24 @@
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
-# Project paths
-PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+# Load environment variables from .env file
+load_dotenv()
+
+# Get the project root directory
+PROJECT_ROOT = os.getenv('PROJECT_ROOT', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Database configuration
+DB_NAME = os.getenv('DB_NAME', 'goal_agent.db')
+DB_PATH = os.path.join(PROJECT_ROOT, DB_NAME)
+
+# API Keys
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # Agent configuration
-AGENT_CONFIG = {
-    "max_steps": 10,
-    "temperature": 0.7,
-    "model_name": "gpt-3.5-turbo"  # or your preferred model
-}
+CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '3600'))  # Default 1 hour in seconds
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 
-# Memory configuration
-MEMORY_CONFIG = {
-    "storage_path": str(DATA_DIR / "memory.json")
-} 
+# Create data directory if it doesn't exist
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
