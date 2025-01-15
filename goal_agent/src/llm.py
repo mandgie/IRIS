@@ -43,7 +43,6 @@ Important: Provide your response as XML without any markdown formatting or code 
             
             # Clean and parse XML
             xml_text = self._clean_xml(response.text)
-            print("Cleaned XML:", xml_text)  # Debug print
             
             root = ET.fromstring(xml_text)
             

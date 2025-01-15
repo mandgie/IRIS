@@ -6,20 +6,31 @@ import logging
 from .memory import MemorySystem
 from .tools import get_tool_registry, ToolType
 from .llm import LLMInterface
+from .config.goal_config import GOAL_CONFIG
+from .utils.logging_config import setup_logging
 
-logger = logging.getLogger('goal_agent')
+logger = setup_logging()
 
 @dataclass
 class Goal:
     description: str
-    success_criteria: Dict[str, any]
-    target_date: datetime
+    success_criteria: List[str]
+    due_date: str
+
+    @classmethod
+    def from_config(cls):
+        """Create a Goal instance from the goal configuration file"""
+        return cls(
+            description=GOAL_CONFIG["description"],
+            success_criteria=GOAL_CONFIG["success_criteria"],
+            due_date=GOAL_CONFIG["due_date"]
+        )
 
 class Agent:
-    def __init__(self, goal: Goal, api_key: str):
-        self.goal = goal
+    def __init__(self, api_key: str, goal: Optional[Goal] = None):
+        self.goal = goal or Goal.from_config()  # Use provided goal or load from config
         self.last_action_time = None
-        self.tool_registry = get_tool_registry()  # Use the new tool registry
+        self.tool_registry = get_tool_registry()
         self.llm = LLMInterface(api_key)
         self.memory = MemorySystem()
 
@@ -117,10 +128,16 @@ class Agent:
             if (tool := self.tool_registry.get_tool(name))
         ])
         
+        # Format success criteria as a bulleted list
+        success_criteria_list = "\n".join([f"- {criterion}" for criterion in self.goal.success_criteria])
+        
         prompt = f"""
         You are an AI agent responsible for helping achieve the goal: {self.goal.description}
-        Success Criteria: {self.goal.success_criteria}
-        Target Date: {self.goal.target_date}
+        
+        Success Criteria:
+        {success_criteria_list}
+        
+        Due Date: {self.goal.due_date}
         
         Current Situation:
         - Time: {situation['timestamp']}
