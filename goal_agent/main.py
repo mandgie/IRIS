@@ -1,11 +1,17 @@
 import time
 from datetime import datetime, timedelta
 import logging
+import argparse
 from src.agent import Agent
 from src.config.config import GEMINI_API_KEY, CHECK_INTERVAL
 from src.utils.logging_config import setup_logging
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Start the goal agent')
+    parser.add_argument('--fresh', action='store_true', help='Start fresh by clearing all tables')
+    args = parser.parse_args()
+
     # Setup logging
     logger = setup_logging()
     
@@ -15,8 +21,13 @@ def main():
         raise ValueError("Please set GEMINI_API_KEY in your .env file")
 
     # Initialize the agent (goal will be loaded from config)
-    agent = Agent(GEMINI_API_KEY)
+    agent = Agent(GEMINI_API_KEY, fresh_start=args.fresh)
     logger.info("Agent initialized")
+    
+    if args.fresh:
+        logger.info("Starting in fresh mode - all previous data has been cleared")
+    else:
+        logger.info("Starting in continue mode - using existing data")
     
     # Log the loaded goal
     logger.info(f"Goal set: {agent.goal.description}")

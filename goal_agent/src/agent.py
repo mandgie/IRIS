@@ -27,12 +27,16 @@ class Goal:
         )
 
 class Agent:
-    def __init__(self, api_key: str, goal: Optional[Goal] = None):
+    def __init__(self, api_key: str, goal: Optional[Goal] = None, fresh_start: bool = False):
+        self.memory = MemorySystem()
+        if fresh_start:
+            self.memory.clear_tables()
+            logger.info("Fresh start: All tables cleared and recreated")
+
         self.goal = goal or Goal.from_config()  # Use provided goal or load from config
         self.last_action_time = None
         self.tool_registry = get_tool_registry()
         self.llm = LLMInterface(api_key)
-        self.memory = MemorySystem()
 
     def analyze_situation(self) -> Dict:
         """Analyze current situation and return structured analysis"""

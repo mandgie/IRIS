@@ -13,6 +13,7 @@ class TodoTool(BaseTool):
     
     def _ensure_table(self):
         """Ensure the todos table exists"""
+        print("Ensuring table exists")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS todos (

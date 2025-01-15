@@ -9,6 +9,19 @@ class MemorySystem:
         self.db_path = DB_PATH
         self.setup_database()
 
+    def clear_tables(self):
+        """Drop all tables and recreate them fresh"""
+        print("Clearing tables")
+        with sqlite3.connect(self.db_path) as conn:
+            # Drop existing tables if they exist
+            conn.execute("DROP TABLE IF EXISTS decisions")
+            conn.execute("DROP TABLE IF EXISTS memory_summaries")
+            conn.execute("DROP TABLE IF EXISTS notes")
+            conn.execute("DROP TABLE IF EXISTS todos")
+            
+            # Recreate tables fresh
+            self.setup_database()
+
     def setup_database(self):
         """Initialize the database tables"""
         with sqlite3.connect(self.db_path) as conn:
