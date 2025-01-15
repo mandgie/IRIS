@@ -2,9 +2,12 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import json
+import logging
 from .memory import MemorySystem
-from .tools import ToolRegistry, NoteTool, CalculatorTool
+from .tools import get_tool_registry, ToolType
 from .llm import LLMInterface
+
+logger = logging.getLogger('goal_agent')
 
 @dataclass
 class Goal:
@@ -16,14 +19,10 @@ class Agent:
     def __init__(self, goal: Goal, api_key: str):
         self.goal = goal
         self.last_action_time = None
-        self.tool_registry = ToolRegistry()
+        self.tool_registry = get_tool_registry()  # Use the new tool registry
         self.llm = LLMInterface(api_key)
         self.memory = MemorySystem()
-        
-        # Register default tools
-        self.tool_registry.register_tool(NoteTool())
-        self.tool_registry.register_tool(CalculatorTool())
-    
+
     def analyze_situation(self) -> Dict:
         """Analyze current situation and return structured analysis"""
         current_time = datetime.now()
@@ -38,9 +37,9 @@ class Agent:
         })
         
         # Format memory components for prompt
-        recent_decisions_summary = self._format_recent_decisions(context['recent'])
-        patterns_summary = self._format_patterns(context['patterns'])
-        summaries_text = self._format_summaries(context['summaries'])
+        recent_decisions_summary = self._format_recent_decisions(context.get('recent', []))
+        patterns_summary = self._format_patterns(context.get('patterns', []))
+        summaries_text = self._format_summaries(context.get('summaries', []))
         
         return {
             "timestamp": current_time.isoformat(),
@@ -98,11 +97,12 @@ class Agent:
         
         formatted = []
         for summary in summaries[:3]:  # Show last 3 summaries
-            summary_data = summary['summary']
-            formatted.append(f"Summary ({summary['summary_type']}) for {summary['start_date']} to {summary['end_date']}:")
-            formatted.append(f"- Total decisions: {summary_data['total_decisions']}")
-            formatted.append(f"- Actions taken: {summary_data['actions_taken']}")
-            formatted.append(f"- Success rate: {summary_data['successful_actions']}/{summary_data['actions_taken']}")
+            summary_data = summary.get('summary', {})
+            formatted.append(f"Summary ({summary.get('summary_type', 'unknown')}) for {summary.get('start_date', 'unknown')} to {summary.get('end_date', 'unknown')}:")
+            formatted.append(f"- Total decisions: {summary_data.get('total_decisions', 0)}")
+            formatted.append(f"- Actions taken: {summary_data.get('actions_taken', 0)}")
+            success_rate = f"{summary_data.get('successful_actions', 0)}/{summary_data.get('actions_taken', 0)}"
+            formatted.append(f"- Success rate: {success_rate}")
         
         return "\n".join(formatted)
     
@@ -112,8 +112,9 @@ class Agent:
         
         # Add available tools to the prompt
         available_tools = "\n".join([
-            f"- {tool}: {self.tool_registry.get_tool(tool).get_description()}"
-            for tool in self.tool_registry.list_tools()
+            f"- {name}: {tool.get_description()}"
+            for name in self.tool_registry.list_tools()
+            if (tool := self.tool_registry.get_tool(name))
         ])
         
         prompt = f"""
@@ -138,8 +139,7 @@ class Agent:
         {available_tools}
         
         Based on this context, determine if any action is needed right now.
-        
-        Respond with an XML document in this exact format:
+        Provide your response in XML format with these exact tags:
         <decision>
             <analysis>Detailed analysis of the situation</analysis>
             <action_type>Action or No Action</action_type>
@@ -157,57 +157,77 @@ class Agent:
         
         decision = self.llm.process_decision(prompt)
         return decision
-    
+
     def use_tool(self, tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Use a specific tool"""
-        tool = self.tool_registry.get_tool(tool_name)
-        if tool:
+        if tool := self.tool_registry.get_tool(tool_name):
             tool.last_used = datetime.now()
-            return tool.execute(params)
+            try:
+                result = tool.execute(params)
+                logger.info(f"Tool {tool_name} executed with result: {result}")
+                return result
+            except Exception as e:
+                error_msg = f"Error executing tool {tool_name}: {str(e)}"
+                logger.error(error_msg)
+                return {"status": "error", "message": error_msg}
         return {"status": "error", "message": f"Tool {tool_name} not found"}
 
     def run_cycle(self):
         """Run one decision cycle"""
-        decision = self.make_decision()
+        logger.info("Starting decision cycle")
         
-        if decision["decision"] == "Action" and decision["action_details"]:
-            self.last_action_time = datetime.now()
-            try:
+        try:
+            decision = self.make_decision()
+            
+            if decision["decision"] == "Action" and decision["action_details"]:
+                self.last_action_time = datetime.now()
                 tool_name = decision["action_details"].get("tool")
                 params = decision["action_details"].get("parameters", {})
+                
                 if tool_name:
                     action_result = self.use_tool(tool_name, params)
                     decision["action_result"] = action_result
-            except Exception as e:
-                print(f"Error executing action: {e}")
-                decision["action_result"] = {
-                    "status": "error",
-                    "message": f"Error executing action: {str(e)}"
-                }
-        
-        # Store decision in memory system
-        self.memory.store_decision(decision)
-        
-        # Create summaries if needed
-        current_time = datetime.now()
-        if current_time.hour == 0 and current_time.minute < 15:  # Around midnight
-            yesterday = current_time - timedelta(days=1)
-            self.memory.create_summary('daily', 
-                                     start_date=yesterday.replace(hour=0, minute=0),
-                                     end_date=yesterday.replace(hour=23, minute=59))
+                    logger.info(f"Action completed with result: {action_result}")
             
-            # Weekly summary on Sunday
-            if current_time.weekday() == 6:  # Sunday
-                week_start = current_time - timedelta(days=7)
-                self.memory.create_summary('weekly',
-                                         start_date=week_start.replace(hour=0, minute=0),
-                                         end_date=current_time.replace(hour=23, minute=59))
+            # Store decision in memory system
+            self.memory.store_decision(decision)
             
-            # Monthly summary on the last day of the month
-            if (current_time + timedelta(days=1)).day == 1:
-                month_start = current_time.replace(day=1, hour=0, minute=0)
-                self.memory.create_summary('monthly',
-                                         start_date=month_start,
-                                         end_date=current_time.replace(hour=23, minute=59))
+            # Create summaries if needed
+            current_time = datetime.now()
+            if current_time.hour == 0 and current_time.minute < 15:  # Around midnight
+                self._create_summaries(current_time)
+            
+            return decision
+            
+        except Exception as e:
+            logger.error(f"Error in run cycle: {str(e)}", exc_info=True)
+            raise
+
+    def _create_summaries(self, current_time: datetime):
+        """Create various summaries based on the current time"""
+        yesterday = current_time - timedelta(days=1)
         
-        return decision
+        # Daily summary
+        self.memory.create_summary(
+            'daily',
+            start_date=yesterday.replace(hour=0, minute=0),
+            end_date=yesterday.replace(hour=23, minute=59)
+        )
+        
+        # Weekly summary on Sunday
+        if current_time.weekday() == 6:  # Sunday
+            week_start = current_time - timedelta(days=7)
+            self.memory.create_summary(
+                'weekly',
+                start_date=week_start.replace(hour=0, minute=0),
+                end_date=current_time.replace(hour=23, minute=59)
+            )
+        
+        # Monthly summary on the last day of the month
+        if (current_time + timedelta(days=1)).day == 1:
+            month_start = current_time.replace(day=1, hour=0, minute=0)
+            self.memory.create_summary(
+                'monthly',
+                start_date=month_start,
+                end_date=current_time.replace(hour=23, minute=59)
+            )
