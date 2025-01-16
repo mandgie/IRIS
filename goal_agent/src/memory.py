@@ -7,7 +7,6 @@ from .config import DB_PATH
 class MemorySystem:
     def __init__(self):
         self.db_path = DB_PATH
-        self.setup_database()
 
     def clear_tables(self):
         """Drop all tables and recreate them fresh"""
@@ -55,6 +54,22 @@ class MemorySystem:
                     content TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
                     category TEXT,
+                    metadata TEXT
+                )
+            """)
+
+            # Create todos table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS todos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT NOT NULL,
+                    priority INTEGER,
+                    due_date TEXT,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    tags TEXT,
                     metadata TEXT
                 )
             """)
@@ -285,6 +300,8 @@ class MemorySystem:
         
         # Get recent decisions
         recent = self.get_recent_decisions(24)  # Last 24 hours
+
+        print("This is recent: ", recent)
         
         # Get relevant summaries
         summaries = self.get_recent_summaries()

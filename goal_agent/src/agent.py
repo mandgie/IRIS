@@ -3,13 +3,14 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import json
 import logging
+import sqlite3
 from .memory import MemorySystem
 from .tools import get_tool_registry, ToolType
 from .llm import LLMInterface
 from .config.goal_config import GOAL_CONFIG
-from .utils.logging_config import setup_logging
+from .config.config import DB_PATH
 
-logger = setup_logging()
+logger = logging.getLogger('goal_agent')
 
 @dataclass
 class Goal:
@@ -28,15 +29,41 @@ class Goal:
 
 class Agent:
     def __init__(self, api_key: str, goal: Optional[Goal] = None, fresh_start: bool = False):
-        self.memory = MemorySystem()
-        if fresh_start:
-            self.memory.clear_tables()
-            logger.info("Fresh start: All tables cleared and recreated")
-
-        self.goal = goal or Goal.from_config()  # Use provided goal or load from config
-        self.last_action_time = None
+        # Clear all tables if fresh start is requested
+        self.goal = goal or Goal.from_config()
         self.tool_registry = get_tool_registry()
         self.llm = LLMInterface(api_key)
+        self.memory = MemorySystem()
+
+        if fresh_start:
+            logger.info("Fresh start requested - clearing all tables")
+            self.memory.clear_tables()
+            self.memory.setup_database()
+        
+        self.last_action_time = self._get_last_action_time()
+
+    def _get_last_action_time(self) -> Optional[datetime]:
+        """Get the timestamp of the last action from the database"""
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.execute("""
+                    SELECT timestamp 
+                    FROM decisions 
+                    WHERE decision = 'Action' 
+                    AND action_result IS NOT NULL 
+                    ORDER BY timestamp DESC 
+                    LIMIT 1
+                """)
+                result = cursor.fetchone()
+                
+                if result:
+                    # Convert ISO format string to datetime
+                    return datetime.fromisoformat(result[0])
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting last action time: {e}")
+            return None
 
     def analyze_situation(self) -> Dict:
         """Analyze current situation and return structured analysis"""
@@ -175,6 +202,8 @@ class Agent:
             <next_check>time period</next_check>
         </decision>
         """
+
+        print(prompt)
         
         decision = self.llm.process_decision(prompt)
         return decision
@@ -201,7 +230,7 @@ class Agent:
             decision = self.make_decision()
             
             if decision["decision"] == "Action" and decision["action_details"]:
-                self.last_action_time = datetime.now()
+                self.last_action_time = datetime.now()  # Update last action time
                 tool_name = decision["action_details"].get("tool")
                 params = decision["action_details"].get("parameters", {})
                 

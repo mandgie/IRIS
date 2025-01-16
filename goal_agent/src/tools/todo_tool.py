@@ -9,26 +9,6 @@ class TodoTool(BaseTool):
     def __init__(self):
         super().__init__("todo", ToolType.PLANNING)
         self.db_path = DB_PATH
-        self._ensure_table()
-    
-    def _ensure_table(self):
-        """Ensure the todos table exists"""
-        print("Ensuring table exists")
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS todos (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    description TEXT,
-                    status TEXT NOT NULL,
-                    priority INTEGER,
-                    due_date TEXT,
-                    created_at TEXT NOT NULL,
-                    completed_at TEXT,
-                    tags TEXT,
-                    metadata TEXT
-                )
-            """)
     
     def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute todo operations"""
